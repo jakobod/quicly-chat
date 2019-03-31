@@ -26,6 +26,22 @@ static const quicly_stream_callbacks_t server_stream_callbacks =
      server_on_receive,
      on_receive_reset};
 
+void enqueue_requests(quicly_conn_t *conn) {
+  size_t i;
+  int ret;
+
+  for (i = 0; req_paths[i] != nullptr; ++i) {
+    char req[1024];
+    quicly_stream_t *stream;
+    ret = quicly_open_stream(conn, &stream, 0);
+    assert(ret == 0);
+    sprintf(req, "GET %s\r\n", req_paths[i]);
+    send_str(stream, req);
+    quicly_streambuf_egress_shutdown(stream);
+  }
+  enqueue_requests_at = INT64_MAX;
+}
+
 int parse_request(ptls_iovec_t input, ptls_iovec_t *path, int *is_http1) {
   size_t off = 0, path_start;
 

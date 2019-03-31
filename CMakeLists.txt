@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.11.2)
-project(picoquic_test)
+project(picoquic_test CXX)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wpedantic -Werr")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
 # find necessary libraries
 find_package(OpenSSL REQUIRED)
@@ -29,6 +29,8 @@ if (QUICLY_FOUND)
   message(STATUS "QUICLY_INCLUDE_DIRS: ${QUICLY_INCLUDE_DIRS}")
 endif()
 
+find_package(Threads)
+
 add_executable(
   quicly_client
   src/client.cpp
@@ -50,6 +52,7 @@ target_link_libraries(
   ${QUICLY_LIBRARIES}
   ${PTLS_LIBRARIES}
   ${OPENSSL_LIBRARIES}
+  ${CMAKE_THREAD_LIBS_INIT}
 )
 
 target_link_libraries(
@@ -57,4 +60,5 @@ target_link_libraries(
   ${QUICLY_LIBRARIES}
   ${PTLS_LIBRARIES}
   ${OPENSSL_LIBRARIES}
+  ${CMAKE_THREAD_LIBS_INIT}
 )
