@@ -12,7 +12,11 @@ extern "C" {
 #include "../picotls/t/util.h"
 }
 
-int client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
+extern int64_t request_interval;
+extern int64_t enqueue_requests_at;
+extern char *req_paths[1024];
+extern quicly_context_t ctx;
+
 int parse_request(ptls_iovec_t input, ptls_iovec_t *path, int *is_http1);
 int path_is(ptls_iovec_t path, const char *expected);
 void send_str(quicly_stream_t *stream, const char *s);
@@ -21,7 +25,6 @@ int send_file(quicly_stream_t *stream, int is_http1, const char *fn, const char 
 int send_sized_text(quicly_stream_t *stream, ptls_iovec_t path, int is_http1);
 int on_stop_sending(quicly_stream_t *stream, int err);
 int on_receive_reset(quicly_stream_t *stream, int err);
-int server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
 int server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 int client_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 void on_closed_by_peer(quicly_closed_by_peer_t *self, quicly_conn_t *conn,
@@ -34,5 +37,8 @@ void enqueue_requests(quicly_conn_t *conn);
 int save_ticket_cb(ptls_save_ticket_t *_self, ptls_t *tls, ptls_iovec_t src);
 void load_ticket(ptls_handshake_properties_t* hs_properties,
                         quicly_transport_parameters_t* resumed_transport_params);
+
+int server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
+int client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
 
 #endif //PICOQUIC_TEST_QUICLY_STUFF_HPP

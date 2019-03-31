@@ -34,10 +34,6 @@
 
 #include "quicly_stuff.hpp"
 
-static quicly_context_t ctx;
-static const char *req_paths[1024];
-static int64_t enqueue_requests_at = 0;
-static int64_t request_interval = 0;
 static quicly_cid_plaintext_t next_cid;
 static ptls_handshake_properties_t hs_properties;
 static quicly_transport_parameters_t resumed_transport_params;
@@ -86,40 +82,6 @@ void enqueue_requests(quicly_conn_t *conn) {
     quicly_streambuf_egress_shutdown(stream);
   }
   enqueue_requests_at = INT64_MAX;
-}
-
-int client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len) {
-  ptls_iovec_t input;
-  int ret;
-
-  if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0)
-    return ret;
-
-  if ((input = quicly_streambuf_ingress_get(stream)).len != 0) {
-    fwrite(input.base, 1, input.len, stdout);
-    fflush(stdout);
-    quicly_streambuf_ingress_shift(stream, input.len);
-  }
-
-  if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
-    static size_t num_resp_received;
-    ++num_resp_received;
-    if (req_paths[num_resp_received] == nullptr) {
-      if (request_interval != 0) {
-        enqueue_requests_at = ctx.now->cb(ctx.now) + request_interval;
-      } else {
-        uint64_t num_received, num_sent, num_lost, num_ack_received, num_bytes_sent;
-        quicly_get_packet_stats(stream->conn, &num_received, &num_sent, &num_lost, &num_ack_received, &num_bytes_sent);
-        fprintf(stderr,
-                "packets: received: %" PRIu64 ", sent: %" PRIu64 ", lost: %" PRIu64 ", ack-received: %" PRIu64
-                ", bytes-sent: %" PRIu64 "\n",
-                num_received, num_sent, num_lost, num_ack_received, num_bytes_sent);
-        quicly_close(stream->conn, 0, "");
-      }
-    }
-  }
-
-  return 0;
 }
 
 static int run_client(sockaddr *sa, socklen_t salen, const char *host)
@@ -360,7 +322,7 @@ int main(int argc, char **argv) {
   argv += optind;
 
   if (req_paths[0] == nullptr)
-    req_paths[0] = "/";
+    req_paths[0] = const_cast<char*>("/");
 
   if (key_exchanges[0] == nullptr)
     key_exchanges[0] = &ptls_openssl_secp256r1;

@@ -5,6 +5,11 @@
 #include "quicly_stuff.hpp"
 
 static const char *ticket_file = "ticket.bin";
+char *req_paths[1024];
+int64_t request_interval = 0;
+int64_t enqueue_requests_at = 0;
+quicly_context_t ctx;
+
 static const quicly_stream_callbacks_t client_stream_callbacks =
     {quicly_streambuf_destroy,
      quicly_streambuf_egress_shift,
@@ -109,43 +114,6 @@ int on_stop_sending(quicly_stream_t *stream, int err) {
 int on_receive_reset(quicly_stream_t *stream, int err) {
   assert(QUICLY_ERROR_IS_QUIC_APPLICATION(err));
   fprintf(stderr, "received RESET_STREAM: %" PRIu16 "\n", QUICLY_ERROR_GET_ERROR_CODE(err));
-  return 0;
-}
-
-int server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len) {
-  ptls_iovec_t path;
-  int is_http1;
-  int ret;
-
-  if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0)
-    return ret;
-
-  if (!parse_request(quicly_streambuf_ingress_get(stream), &path, &is_http1)) {
-    if (!quicly_recvstate_transfer_complete(&stream->recvstate))
-      return 0;
-    /* failed to parse request */
-    send_header(stream, 1, 500, "text/plain; charset=utf-8");
-    send_str(stream, "failed to parse HTTP request\n");
-    goto Sent;
-  }
-  if (!quicly_recvstate_transfer_complete(&stream->recvstate))
-    quicly_request_stop(stream, 0);
-
-  if (path_is(path, "/logo.jpg") && send_file(stream, is_http1, "assets/logo.jpg", "image/jpeg"))
-    goto Sent;
-  if (path_is(path, "/main.jpg") && send_file(stream, is_http1, "assets/main.jpg", "image/jpeg"))
-    goto Sent;
-  if (send_sized_text(stream, path, is_http1))
-    goto Sent;
-
-  if (!quicly_sendstate_is_open(&stream->sendstate))
-    return 0;
-
-  send_header(stream, is_http1, 404, "text/plain; charset=utf-8");
-  send_str(stream, "not found\n");
-  Sent:
-  quicly_streambuf_egress_shutdown(stream);
-  quicly_streambuf_ingress_shift(stream, len);
   return 0;
 }
 
@@ -310,6 +278,76 @@ void load_ticket(ptls_handshake_properties_t* hs_properties,
   );
   hs_properties->client.session_ticket = ticket;
 
-
   Exit:;
+}
+
+int server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len) {
+  ptls_iovec_t path;
+  int is_http1;
+  int ret;
+
+  if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0)
+    return ret;
+
+  if (!parse_request(quicly_streambuf_ingress_get(stream), &path, &is_http1)) {
+    if (!quicly_recvstate_transfer_complete(&stream->recvstate))
+      return 0;
+    /* failed to parse request */
+    send_header(stream, 1, 500, "text/plain; charset=utf-8");
+    send_str(stream, "failed to parse HTTP request\n");
+    goto Sent;
+  }
+  if (!quicly_recvstate_transfer_complete(&stream->recvstate))
+    quicly_request_stop(stream, 0);
+
+  if (path_is(path, "/logo.jpg") && send_file(stream, is_http1, "assets/logo.jpg", "image/jpeg"))
+    goto Sent;
+  if (path_is(path, "/main.jpg") && send_file(stream, is_http1, "assets/main.jpg", "image/jpeg"))
+    goto Sent;
+  if (send_sized_text(stream, path, is_http1))
+    goto Sent;
+
+  if (!quicly_sendstate_is_open(&stream->sendstate))
+    return 0;
+
+  send_header(stream, is_http1, 404, "text/plain; charset=utf-8");
+  send_str(stream, "Hello World!!!!!!!!!!\n");
+  Sent:
+  quicly_streambuf_egress_shutdown(stream);
+  quicly_streambuf_ingress_shift(stream, len);
+  return 0;
+}
+
+int client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len) {
+  ptls_iovec_t input;
+  int ret;
+
+  if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0)
+    return ret;
+
+  if ((input = quicly_streambuf_ingress_get(stream)).len != 0) {
+    fwrite(input.base, 1, input.len, stdout);
+    fflush(stdout);
+    quicly_streambuf_ingress_shift(stream, input.len);
+  }
+
+  if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
+    static size_t num_resp_received;
+    ++num_resp_received;
+    if (req_paths[num_resp_received] == nullptr) {
+      if (request_interval != 0) {
+        enqueue_requests_at = ctx.now->cb(ctx.now) + request_interval;
+      } else {
+        uint64_t num_received, num_sent, num_lost, num_ack_received, num_bytes_sent;
+        quicly_get_packet_stats(stream->conn, &num_received, &num_sent, &num_lost, &num_ack_received, &num_bytes_sent);
+        fprintf(stderr,
+                "packets: received: %" PRIu64 ", sent: %" PRIu64 ", lost: %" PRIu64 ", ack-received: %" PRIu64
+                ", bytes-sent: %" PRIu64 "\n",
+                num_received, num_sent, num_lost, num_ack_received, num_bytes_sent);
+        quicly_close(stream->conn, 0, "");
+      }
+    }
+  }
+
+  return 0;
 }

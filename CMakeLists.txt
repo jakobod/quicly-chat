@@ -29,16 +29,31 @@ if (QUICLY_FOUND)
   message(STATUS "QUICLY_INCLUDE_DIRS: ${QUICLY_INCLUDE_DIRS}")
 endif()
 
-add_executable(quicly_client src/client.cpp src/client.hpp src/quicly_stuff.cpp src/quicly_stuff.hpp)
-add_executable(quicly_server src/server.cpp src/server.hpp)
+add_executable(
+  quicly_client
+  src/client.cpp
+  src/client.hpp
+  src/quicly_stuff.cpp
+  src/quicly_stuff.hpp
+)
 
-target_link_libraries(quicly_client
+add_executable(
+  quicly_server
+  src/server.cpp
+  src/server.hpp
+  src/quicly_stuff.cpp
+  src/quicly_stuff.hpp
+)
+
+target_link_libraries(
+  quicly_client
   ${QUICLY_LIBRARIES}
   ${PTLS_LIBRARIES}
   ${OPENSSL_LIBRARIES}
 )
 
-target_link_libraries(quicly_server
+target_link_libraries(
+  quicly_server
   ${QUICLY_LIBRARIES}
   ${PTLS_LIBRARIES}
   ${OPENSSL_LIBRARIES}
