@@ -29,7 +29,7 @@ if (QUICLY_FOUND)
   message(STATUS "QUICLY_INCLUDE_DIRS: ${QUICLY_INCLUDE_DIRS}")
 endif()
 
-add_executable(quicly_client src/client.cpp src/client.hpp)
+add_executable(quicly_client src/client.cpp src/client.hpp src/quicly_stuff.cpp src/quicly_stuff.hpp)
 add_executable(quicly_server src/server.cpp src/server.hpp)
 
 target_link_libraries(quicly_client
