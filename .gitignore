@@ -1,0 +1,21 @@
+# exclude everything
+*
+
+# now reinclude needed stuff
+# git stuff
+!**/.gitignore
+
+# CMake
+!**/CMakeLists.txt
+!**/cmake/
+!**/cmake/*
+
+# sources
+!**/src/
+!**/src/*
+!**/headers/
+!**/headers/*
+
+# build script
+!**/setup.sh
+
