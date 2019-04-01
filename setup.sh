@@ -21,7 +21,7 @@ then
   cd build
 else
   cd ${ROOT_DIR}
-  git clone https://github.com/h2o/picotls.git
+  git clone https://github.com/jakobod/picotls.git
   cd picotls
   git submodule update --init --recursive
   mkdir build

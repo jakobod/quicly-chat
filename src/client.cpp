@@ -36,47 +36,55 @@
 #include "quicly_stuff.hpp"
 #include "client.hpp"
 
-void client::on_signal(int signo) {
-  size_t i;
-  for (i = 0; i != num_conns; ++i) {
-    const quicly_cid_plaintext_t *master_id = quicly_get_master_id(conns[i]);
-    uint64_t num_received, num_sent, num_lost, num_ack_received, num_bytes_sent;
-    quicly_get_packet_stats(conns[i], &num_received, &num_sent, &num_lost, &num_ack_received, &num_bytes_sent);
-    fprintf(stderr,
-            "conn:%08" PRIu32 ": received: %" PRIu64 ", sent: %" PRIu64 ", lost: %" PRIu64 ", ack-received: %" PRIu64
-            ", bytes-sent: %" PRIu64 "\n",
-            master_id->master_id, num_received, num_sent, num_lost, num_ack_received, num_bytes_sent);
-  }
-  if (signo == SIGINT)
-    _exit(0);
+client::client() :
+                  fd_(-1),
+                  running_(true),
+                  host_("localhost"),
+                  port_("4433"),
+                  sa_(),
+                  salen_(0),
+                  next_cid_(),
+                  hs_properties_(),
+                  resumed_transport_params_(),
+                  closed_by_peer_{&on_closed_by_peer},
+                  stream_open_{&client_on_stream_open},
+                  save_ticket_{&save_ticket_cb},
+                  num_conns_(0),
+                  cid_key_(nullptr) {
+  tlsctx_.random_bytes = ptls_openssl_random_bytes;
+  tlsctx_.get_time = &ptls_get_time;
+  tlsctx_.key_exchanges = key_exchanges_;
+  tlsctx_.cipher_suites = ptls_openssl_cipher_suites;
+  tlsctx_.require_dhe_on_psk = 1;
+  tlsctx_.save_ticket = &save_ticket_;
 }
 
 int client::init() {
   ctx = quicly_default_context;
-  ctx.tls = &tlsctx;
-  ctx.stream_open = &stream_open;
-  ctx.closed_by_peer = &closed_by_peer;
+  ctx.tls = &tlsctx_;
+  ctx.stream_open = &stream_open_;
+  ctx.closed_by_peer = &closed_by_peer_;
 
   setup_session_cache(ctx.tls);
   quicly_amend_ptls_context(ctx.tls);
   req_paths[0] = const_cast<char*>("/");
 
   //
-  key_exchanges[0] = &ptls_openssl_secp256r1;
+  key_exchanges_[0] = &ptls_openssl_secp256r1;
 
   // generate tls context
   static char random_key[17];
-  tlsctx.random_bytes(random_key, sizeof(random_key) - 1);
-  cid_key = random_key;
+  tlsctx_.random_bytes(random_key, sizeof(random_key) - 1);
+  cid_key_ = random_key;
 
   ctx.cid_encryptor =
-      quicly_new_default_cid_encryptor(&ptls_openssl_bfecb, &ptls_openssl_sha256, ptls_iovec_init(cid_key, strlen(cid_key)));
+      quicly_new_default_cid_encryptor(&ptls_openssl_bfecb, &ptls_openssl_sha256, ptls_iovec_init(cid_key_, strlen(cid_key_)));
 
-  host = "localhost";
-  port = "4433";
+  host_ = "localhost";
+  port_ = "4433";
 
-  std::cout << "connecting to host: " << host << " port: " << port << std::endl;
-  if (resolve_address((sockaddr*)&sa, &salen, host.c_str(), port.c_str(), AF_INET, SOCK_DGRAM, IPPROTO_UDP) != 0)
+  std::cout << "connecting to host_: " << host_ << " port: " << port_ << std::endl;
+  if (resolve_address(&sa_, &salen_, host_.c_str(), port_.c_str(), AF_INET, SOCK_DGRAM, IPPROTO_UDP) != 0)
     exit(-1);
 
   return 0;
@@ -87,7 +95,7 @@ void client::operator()() {
   sockaddr_in local = {};
   quicly_conn_t *conn = nullptr;
 
-  if ((fd_ = socket(sa.sa_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+  if ((fd_ = socket(sa_.sa_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
     throw std::runtime_error("socket(2) failed");
   }
   memset(&local, 0, sizeof(local));
@@ -96,9 +104,9 @@ void client::operator()() {
     throw std::runtime_error("bind(2) failed");
   }
   // TODO: this throws.. why tho?
-  ret = quicly_connect(&conn, &ctx, host.c_str(), &sa, salen, &next_cid, &hs_properties, &resumed_transport_params);
+  ret = quicly_connect(&conn, &ctx, host_.c_str(), &sa_, salen_, &next_cid_, &hs_properties_, &resumed_transport_params_);
   assert(ret == 0);
-  ++next_cid.master_id;
+  ++next_cid_.master_id;
   enqueue_requests(conn);
   send_pending(fd_, conn);
 

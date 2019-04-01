@@ -354,13 +354,12 @@ int client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size
       if (request_interval != 0) {
         enqueue_requests_at = ctx.now->cb(ctx.now) + request_interval;
       } else {
-        uint64_t num_received, num_sent, num_lost, num_ack_received, num_bytes_sent;
-        quicly_get_packet_stats(stream->conn, &num_received, &num_sent, &num_lost, &num_ack_received, &num_bytes_sent);
+        quicly_stats_t *stats = quicly_get_stats(stream->conn);
         fprintf(stderr,
                 "packets: received: %" PRIu64 ", sent: %" PRIu64 ", lost: %" PRIu64 ", ack-received: %" PRIu64
-                ", bytes-sent: %" PRIu64 "\n",
-                num_received, num_sent, num_lost, num_ack_received, num_bytes_sent);
-        quicly_close(stream->conn, 0, "");
+                ", bytes-received: %" PRIu64 ", bytes-sent: %" PRIu64 "\n",
+                stats->num_packets.received, stats->num_packets.sent, stats->num_packets.lost,
+                stats->num_packets.ack_received, stats->num_bytes.received, stats->num_bytes.sent);
       }
     }
   }

@@ -6,10 +6,11 @@
 #define PICOQUIC_TEST_CLIENT_HPP
 
 #include "quicly_stuff.hpp"
+#include <string>
 
 class client {
 public:
-  client() = default;
+  client();
   ~client() = default;
 
   void operator()();
@@ -17,30 +18,23 @@ public:
   int init();
 
 private:
-  void on_signal(int signo);
-
   int fd_;
   bool running_ = true;
-  std::string host;
-  std::string port;
-  sockaddr sa;
-  socklen_t salen;
-  quicly_cid_plaintext_t next_cid;
-  ptls_handshake_properties_t hs_properties;
-  quicly_transport_parameters_t resumed_transport_params;
-  quicly_closed_by_peer_t closed_by_peer = {&on_closed_by_peer};
-  quicly_stream_open_t stream_open = {&client_on_stream_open};
-  ptls_save_ticket_t save_ticket = {save_ticket_cb};
-  ptls_key_exchange_algorithm_t *key_exchanges[128];
-  ptls_context_t tlsctx = {.random_bytes = ptls_openssl_random_bytes,
-      .get_time = &ptls_get_time,
-      .key_exchanges = key_exchanges,
-      .cipher_suites = ptls_openssl_cipher_suites,
-      .require_dhe_on_psk = 1,
-      .save_ticket = &save_ticket};
-  quicly_conn_t **conns;
-  size_t num_conns = 0;
-  char* cid_key = nullptr;
+  std::string host_;
+  std::string port_;
+  sockaddr sa_;
+  socklen_t salen_;
+  quicly_cid_plaintext_t next_cid_;
+  ptls_handshake_properties_t hs_properties_;
+  quicly_transport_parameters_t resumed_transport_params_;
+  quicly_closed_by_peer_t closed_by_peer_;
+  quicly_stream_open_t stream_open_;
+  ptls_save_ticket_t save_ticket_;
+  ptls_key_exchange_algorithm_t *key_exchanges_[128];
+  ptls_context_t tlsctx_;
+  quicly_conn_t **conns_;
+  size_t num_conns_;
+  char* cid_key_;
 };
 
 

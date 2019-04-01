@@ -216,7 +216,7 @@ static int run_server(sockaddr *sa, socklen_t salen) {
 }
 
 static void usage(const char *cmd) {
-  printf("Usage: %s [options] host port\n"
+  printf("Usage: %s [options] host_ port\n"
          "\n"
          "Options:\n"
          "  -a <alpn list>       a coma separated list of ALPN identifiers\n"
@@ -381,7 +381,7 @@ int main(int argc, char **argv) {
   host = "localhost";
   port = "4433";
 
-  std::cout << "host: " << host << " port: " << port << std::endl;
+  std::cout << "host_: " << host << " port: " << port << std::endl;
   if (resolve_address((sockaddr*)&sa, &salen, host, port, AF_INET, SOCK_DGRAM, IPPROTO_UDP) != 0)
     exit(1);
 
