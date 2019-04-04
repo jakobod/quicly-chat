@@ -32,8 +32,7 @@ private:
   ptls_save_ticket_t save_ticket_;
   ptls_key_exchange_algorithm_t *key_exchanges_[128];
   ptls_context_t tlsctx_;
-  quicly_conn_t **conns_;
-  size_t num_conns_;
+  quicly_conn_t* conn_;
   char* cid_key_;
 };
 

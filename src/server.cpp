@@ -57,11 +57,12 @@ static void on_signal(int signo) {
   for (i = 0; i != num_conns; ++i) {
     const quicly_cid_plaintext_t *master_id = quicly_get_master_id(conns[i]);
     uint64_t num_received, num_sent, num_lost, num_ack_received, num_bytes_sent;
-    quicly_get_packet_stats(conns[i], &num_received, &num_sent, &num_lost, &num_ack_received, &num_bytes_sent);
-    fprintf(stderr,
-            "conn:%08" PRIu32 ": received: %" PRIu64 ", sent: %" PRIu64 ", lost: %" PRIu64 ", ack-received: %" PRIu64
-            ", bytes-sent: %" PRIu64 "\n",
-            master_id->master_id, num_received, num_sent, num_lost, num_ack_received, num_bytes_sent);
+    quicly_stats_t *stats = quicly_get_stats(conns[i]);
+        fprintf(stderr,
+                "conn:%08" PRIu32 ": received: %" PRIu64 ", sent: %" PRIu64 ", lost: %" PRIu64 ", ack-received: %" PRIu64
+                ", bytes-received: %" PRIu64 ", bytes-sent: %" PRIu64 "\n",
+                master_id->master_id, stats->num_packets.received, stats->num_packets.sent, stats->num_packets.lost,
+                stats->num_packets.ack_received, stats->num_bytes.received, stats->num_bytes.sent);
   }
   if (signo == SIGINT)
     _exit(0);
@@ -367,8 +368,8 @@ int main(int argc, char **argv) {
     // TODO hardcode certs for testing
   if (ctx.tls->certificates.count == 0 || ctx.tls->sign_certificate == nullptr) {
     std::cout << "trying to load default cert and key." << std::endl;
-    load_certificate_chain(ctx.tls, "/home/boss/CLionProjects/quicly-test/quicly/t/assets/server.crt"); // load default cert
-    load_private_key(ctx.tls, "/home/boss/CLionProjects/quicly-test/quicly/t/assets/server.key"); // load default key
+    load_certificate_chain(ctx.tls, "/home/boss/CLionProjects/quicly-chat/quicly/t/assets/server.crt"); // load default cert
+    load_private_key(ctx.tls, "/home/boss/CLionProjects/quicly-chat/quicly/t/assets/server.key"); // load default key
   }
   if (cid_key == nullptr) {
     static char random_key[17];
@@ -381,7 +382,7 @@ int main(int argc, char **argv) {
   host = "localhost";
   port = "4433";
 
-  std::cout << "host_: " << host << " port: " << port << std::endl;
+  std::cout << "host: " << host << " port: " << port << std::endl;
   if (resolve_address((sockaddr*)&sa, &salen, host, port, AF_INET, SOCK_DGRAM, IPPROTO_UDP) != 0)
     exit(1);
 

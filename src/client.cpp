@@ -49,8 +49,9 @@ client::client() :
                   closed_by_peer_{&on_closed_by_peer},
                   stream_open_{&client_on_stream_open},
                   save_ticket_{&save_ticket_cb},
-                  num_conns_(0),
+                  conn_(nullptr),
                   cid_key_(nullptr) {
+  memset(&tlsctx_, 0, sizeof(ptls_context_t));
   tlsctx_.random_bytes = ptls_openssl_random_bytes;
   tlsctx_.get_time = &ptls_get_time;
   tlsctx_.key_exchanges = key_exchanges_;
@@ -64,61 +65,53 @@ int client::init() {
   ctx.tls = &tlsctx_;
   ctx.stream_open = &stream_open_;
   ctx.closed_by_peer = &closed_by_peer_;
-
+  
   setup_session_cache(ctx.tls);
   quicly_amend_ptls_context(ctx.tls);
+
   req_paths[0] = const_cast<char*>("/");
-
-  //
   key_exchanges_[0] = &ptls_openssl_secp256r1;
+  load_ticket(&hs_properties_, &resumed_transport_params_);
 
-  // generate tls context
-  static char random_key[17];
-  tlsctx_.random_bytes(random_key, sizeof(random_key) - 1);
-  cid_key_ = random_key;
-
-  ctx.cid_encryptor =
-      quicly_new_default_cid_encryptor(&ptls_openssl_bfecb, &ptls_openssl_sha256, ptls_iovec_init(cid_key_, strlen(cid_key_)));
-
-  host_ = "localhost";
-  port_ = "4433";
-
-  std::cout << "connecting to host_: " << host_ << " port: " << port_ << std::endl;
-  if (resolve_address(&sa_, &salen_, host_.c_str(), port_.c_str(), AF_INET, SOCK_DGRAM, IPPROTO_UDP) != 0)
-    exit(-1);
-
+  if (resolve_address(&sa_, &salen_, host_.c_str(), port_.c_str(), AF_INET, 
+                      SOCK_DGRAM, IPPROTO_UDP) != 0) {
+    throw std::runtime_error("could not resolve address");
+  }
   return 0;
 }
 
 void client::operator()() {
   int ret;
-  sockaddr_in local = {};
-  quicly_conn_t *conn = nullptr;
+  struct sockaddr_in local = {};
 
   if ((fd_ = socket(sa_.sa_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
     throw std::runtime_error("socket(2) failed");
   }
+
   memset(&local, 0, sizeof(local));
   local.sin_family = AF_INET;
-  if (bind(fd_, (sockaddr*) &local, sizeof(local)) != 0) {
+  if (bind(fd_, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0) {
     throw std::runtime_error("bind(2) failed");
   }
   // TODO: this throws.. why tho?
-  ret = quicly_connect(&conn, &ctx, host_.c_str(), &sa_, salen_, &next_cid_, &hs_properties_, &resumed_transport_params_);
-  assert(ret == 0);
+  if (quicly_connect(&conn_, &ctx, host_.c_str(), &sa_, salen_, &next_cid_, 
+                       &hs_properties_, &resumed_transport_params_)) {
+    throw std::runtime_error("quicly_connect failed");
+  }
+
   ++next_cid_.master_id;
-  enqueue_requests(conn);
-  send_pending(fd_, conn);
+  enqueue_requests(conn_);
+  send_pending(fd_, conn_);
 
   while (running_) {
     fd_set readfds;
     timeval *tv, tvbuf = {};
     do {
-      int64_t timeout_at = conn != nullptr ? quicly_get_first_timeout(conn) : INT64_MAX;
+      int64_t timeout_at = conn_ != nullptr ? quicly_get_first_timeout(conn_) : INT64_MAX;
       if (enqueue_requests_at < timeout_at)
         timeout_at = enqueue_requests_at;
       if (timeout_at != INT64_MAX) {
-        quicly_context_t *ctx = quicly_get_context(conn);
+        quicly_context_t *ctx = quicly_get_context(conn_);
         int64_t delta = timeout_at - ctx->now->cb(ctx->now);
         if (delta > 0) {
           tvbuf.tv_sec = delta / 1000;
@@ -135,7 +128,7 @@ void client::operator()() {
       FD_SET(fd_, &readfds);
     } while (select(fd_ + 1, &readfds, nullptr, nullptr, tv) == -1 && errno == EINTR);
     if (enqueue_requests_at <= ctx.now->cb(ctx.now))
-      enqueue_requests(conn);
+      enqueue_requests(conn_);
     if (FD_ISSET(fd_, &readfds)) {
       uint8_t buf[4096];
       msghdr mess = {};
@@ -156,15 +149,15 @@ void client::operator()() {
         size_t plen = quicly_decode_packet(&ctx, &packet, buf + off, rret - off);
         if (plen == SIZE_MAX)
           break;
-        quicly_receive(conn, &packet);
+        quicly_receive(conn_, &packet);
         off += plen;
       }
     }
-    if (conn != nullptr) {
-      ret = send_pending(fd_, conn);
+    if (conn_ != nullptr) {
+      ret = send_pending(fd_, conn_);
       if (ret != 0) {
-        quicly_free(conn);
-        conn = nullptr;
+        quicly_free(conn_);
+        conn_ = nullptr;
         if (ret == QUICLY_ERROR_FREE_CONNECTION) {
           throw std::runtime_error("QUICLY_ERROR_FREE_CONNECTION");
         } else {
