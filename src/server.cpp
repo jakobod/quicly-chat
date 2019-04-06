@@ -31,8 +31,8 @@
 #include <vector>
 #include <iostream>
 #include <thread>
-#include "server.hpp"
-#include "quicly_stuff.hpp"
+#include "quicly/server.hpp"
+#include "quicly/quicly_stuff.hpp"
 
 
 server::server() :

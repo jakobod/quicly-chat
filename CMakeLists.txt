@@ -5,6 +5,10 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
+include_directories(headers)
+include_directories(headers/picotls)
+include_directories(headers/quicly)
+
 # find necessary libraries
 find_package(OpenSSL REQUIRED)
 if (OPENSSL_FOUND)
@@ -34,17 +38,17 @@ find_package(Threads)
 add_executable(
   quicly_client
   src/client.cpp
-  src/client.hpp
+  headers/quicly/client.hpp
   src/quicly_stuff.cpp
-  src/quicly_stuff.hpp
+  headers/quicly/quicly_stuff.hpp
 )
 
 add_executable(
   quicly_server
   src/server.cpp
-  src/server.hpp
+  headers/quicly/server.hpp
   src/quicly_stuff.cpp
-  src/quicly_stuff.hpp
+  headers/quicly/quicly_stuff.hpp
 )
 
 target_link_libraries(

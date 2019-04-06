@@ -33,8 +33,8 @@
 #include <iostream>
 #include <thread>
 
-#include "quicly_stuff.hpp"
-#include "client.hpp"
+#include "quicly/quicly_stuff.hpp"
+#include "quicly/client.hpp"
 
 client::client() :
                   fd_(-1),
