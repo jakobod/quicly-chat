@@ -15,6 +15,10 @@
 !**/src/*
 !**/headers/
 !**/headers/*
+!headers/picotls
+!headers/picotls/*
+!headers/quicly
+!headers/quicly/*
 
 # build script
 !**/setup.sh
