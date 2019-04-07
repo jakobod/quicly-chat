@@ -1,5 +1,5 @@
 # quicly-chat
-This is an example project to better understand the (quicly-lib)[https://github.com/h2o/quicly]
+This is an example project to better understand the [quicly-lib](https://github.com/h2o/quicly)
 The sample server will pass all incoming messages to all connected clients. The client itself will read input from `cin` and send it to the server. Incoming data will be printed to stdout.
 
 # how to build
