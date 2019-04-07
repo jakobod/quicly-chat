@@ -36,31 +36,42 @@
 #include "quicly/quicly_stuff.hpp"
 #include "quicly/client.hpp"
 
+quicly_stream_callbacks_t client::stream_callbacks = {
+    quicly_streambuf_destroy,
+    quicly_streambuf_egress_shift,
+    quicly_streambuf_egress_emit,
+    on_stop_sending,
+    on_receive,
+    on_receive_reset
+};
+
 client::client() :
-                  fd_(-1),
                   running_(true),
                   host_("localhost"),
                   port_("4433"),
+                  cid_key_(nullptr),
                   sa_(),
                   salen_(0),
                   next_cid_(),
                   hs_properties_(),
                   resumed_transport_params_(),
                   closed_by_peer_{&on_closed_by_peer},
-                  stream_open_{&client_on_stream_open},
+                  stream_open_{&on_stream_open},
                   save_ticket_{&save_ticket_cb},
+                  key_exchanges_(),
+                  tlsctx_(),
                   conn_(nullptr),
-                  cid_key_(nullptr) {
+                  fd_(-1) {}
+
+void client::init() {
   memset(&tlsctx_, 0, sizeof(ptls_context_t));
   tlsctx_.random_bytes = ptls_openssl_random_bytes;
   tlsctx_.get_time = &ptls_get_time;
   tlsctx_.key_exchanges = key_exchanges_;
   tlsctx_.cipher_suites = ptls_openssl_cipher_suites;
-  tlsctx_.require_dhe_on_psk = 1;
+  tlsctx_.require_dhe_on_psk = true;
   tlsctx_.save_ticket = &save_ticket_;
-}
 
-int client::init() {
   ctx = quicly_default_context;
   ctx.tls = &tlsctx_;
   ctx.stream_open = &stream_open_;
@@ -69,22 +80,20 @@ int client::init() {
   setup_session_cache(ctx.tls);
   quicly_amend_ptls_context(ctx.tls);
 
-  req_paths[0] = const_cast<char*>("/");
   key_exchanges_[0] = &ptls_openssl_secp256r1;
   load_ticket(&hs_properties_, &resumed_transport_params_);
 
-  if (resolve_address(&sa_, &salen_, host_.c_str(), port_.c_str(), AF_INET, 
+  if (resolve_address(reinterpret_cast<sockaddr*>(&sa_), &salen_, host_.c_str(), port_.c_str(), AF_INET,
                       SOCK_DGRAM, IPPROTO_UDP) != 0) {
     throw std::runtime_error("could not resolve address");
   }
-  return 0;
 }
 
 void client::operator()() {
   int ret;
-  struct sockaddr_in local = {};
+  sockaddr_in local = {};
 
-  if ((fd_ = socket(sa_.sa_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+  if ((fd_ = socket(reinterpret_cast<sockaddr*>(&sa_)->sa_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
     throw std::runtime_error("socket(2) failed");
   }
 
@@ -94,22 +103,19 @@ void client::operator()() {
     throw std::runtime_error("bind(2) failed");
   }
   // TODO: this throws.. why tho?
-  if (quicly_connect(&conn_, &ctx, host_.c_str(), &sa_, salen_, &next_cid_, 
+  if (quicly_connect(&conn_, &ctx, host_.c_str(), reinterpret_cast<sockaddr*>(&sa_), salen_, &next_cid_,
                        &hs_properties_, &resumed_transport_params_)) {
     throw std::runtime_error("quicly_connect failed");
   }
 
   ++next_cid_.master_id;
-  enqueue_requests(conn_);
-  send_pending(fd_, conn_);
+  //send_pending(fd_, conn_);
 
   while (running_) {
     fd_set readfds;
     timeval *tv, tvbuf = {};
     do {
       int64_t timeout_at = conn_ != nullptr ? quicly_get_first_timeout(conn_) : INT64_MAX;
-      if (enqueue_requests_at < timeout_at)
-        timeout_at = enqueue_requests_at;
       if (timeout_at != INT64_MAX) {
         quicly_context_t *ctx = quicly_get_context(conn_);
         int64_t delta = timeout_at - ctx->now->cb(ctx->now);
@@ -126,10 +132,8 @@ void client::operator()() {
       }
       FD_ZERO(&readfds);
       FD_SET(fd_, &readfds);
-    } while (select(fd_ + 1, &readfds, nullptr, nullptr, tv) == -1 && errno == EINTR);
-    if (enqueue_requests_at <= ctx.now->cb(ctx.now))
-      enqueue_requests(conn_);
-    if (FD_ISSET(fd_, &readfds)) {
+    } while (select(fd_ + 1, &readfds, nullptr, nullptr, tv) == -1 && errno == EINTR && running_);
+    if (FD_ISSET(fd_, &readfds) && running_) {
       uint8_t buf[4096];
       msghdr mess = {};
       sockaddr sa = {};
@@ -170,18 +174,73 @@ void client::operator()() {
   std::cout << "client quit" << std::endl;
 }
 
+void client::send(const char* buf, int amount) {
+  // open stream for this data
+  quicly_stream_t* stream;
+  if (quicly_open_stream(conn_, &stream, 0)) {
+    throw std::runtime_error("quicly_open_stream failed");
+  }
+
+  // send data and close stream afterwards.
+  quicly_streambuf_egress_write(stream, buf, amount);
+  quicly_streambuf_egress_shutdown(stream);
+  send_pending(fd_, conn_);
+}
+
 void client::stop() {
   running_ = false;
   shutdown(fd_, SHUT_RDWR);
   close(fd_);
 }
 
+// client quicly callbacks -----------------------------------------------------
+
+int client::on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream) {
+  int ret;
+
+  if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
+    return ret;
+  stream->callbacks = &stream_callbacks;
+  return 0;
+}
+
+int client::on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len) {
+  ptls_iovec_t input;
+  int ret;
+
+  if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0)
+    return ret;
+
+  if ((input = quicly_streambuf_ingress_get(stream)).len != 0) {
+    std::string msg(reinterpret_cast<char*>(input.base), input.len);
+    std::cout << "received: " << msg << std::endl;
+    quicly_streambuf_ingress_shift(stream, input.len);
+  }
+
+  return 0;
+}
+
 int main(int argc, char **argv) {
   client cli;
-  cli.init();
+
+  try {
+    cli.init();
+  } catch (const std::runtime_error& err) {
+    std::cerr << err.what() << std::endl;
+    return -1;
+  }
   std::thread t_cli(std::ref(cli));
 
-  getchar();
+  std::cout << "please enter your chat messages:" << std::endl;
+  std::string msg;
+  while (std::getline(std::cin, msg)) {
+    if (msg == "/quit") {
+      break;
+    } else {
+      cli.send(msg.c_str(), msg.length());
+    }
+  }
+
   cli.stop();
   t_cli.join();
   return 0;
