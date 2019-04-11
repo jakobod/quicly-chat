@@ -23,6 +23,7 @@ private:
   static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
   static int on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
 
+  int control_sockets_[2];
     // thread stuff
   bool running_ = true;
   // connection info

@@ -6,6 +6,7 @@
 #define PICOQUIC_TEST_SERVER_HPP
 
 #include "quicly_stuff.hpp"
+#include <vector>
 
 class server {
 public:
@@ -22,6 +23,8 @@ private:
 
   static int on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len);
   static int on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
+
+  int control_sockets_[2];
   bool running_;
   std::string host_;
   std::string port_;

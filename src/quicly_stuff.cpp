@@ -7,10 +7,6 @@
 constexpr char ticket_file[] = "ticket.bin";
 quicly_context_t ctx;
 
-void send_str(quicly_stream_t *stream, const char *s) {
-  quicly_streambuf_egress_write(stream, s, strlen(s));
-}
-
 int on_stop_sending(quicly_stream_t *stream, int err) {
   assert(QUICLY_ERROR_IS_QUIC_APPLICATION(err));
   fprintf(stderr, "received STOP_SENDING: %" PRIu16 "\n", QUICLY_ERROR_GET_ERROR_CODE(err));

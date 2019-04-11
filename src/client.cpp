@@ -64,12 +64,15 @@ client::client() :
                   fd_(-1) {}
 
 void client::init() {
+  // make a socketpair to quit this program.
+  socketpair(PF_LOCAL, SOCK_DGRAM, 0, control_sockets_);
+
   memset(&tlsctx_, 0, sizeof(ptls_context_t));
   tlsctx_.random_bytes = ptls_openssl_random_bytes;
   tlsctx_.get_time = &ptls_get_time;
   tlsctx_.key_exchanges = key_exchanges_;
   tlsctx_.cipher_suites = ptls_openssl_cipher_suites;
-  tlsctx_.require_dhe_on_psk = true;
+  tlsctx_.require_dhe_on_psk = 1;
   tlsctx_.save_ticket = &save_ticket_;
 
   ctx = quicly_default_context;
@@ -132,6 +135,7 @@ void client::operator()() {
       }
       FD_ZERO(&readfds);
       FD_SET(fd_, &readfds);
+      FD_SET(control_sockets_[0], &readfds);
     } while (select(fd_ + 1, &readfds, nullptr, nullptr, tv) == -1 && errno == EINTR && running_);
     if (FD_ISSET(fd_, &readfds) && running_) {
       uint8_t buf[4096];
@@ -171,6 +175,12 @@ void client::operator()() {
       }
     }
   }
+
+  // close connection.
+  quicly_close(conn_, 0, "");
+  send_pending(fd_, conn_);
+  quicly_free(conn_);
+  close(fd_);
   std::cout << "client quit" << std::endl;
 }
 
@@ -189,8 +199,10 @@ void client::send(const char* buf, int amount) {
 
 void client::stop() {
   running_ = false;
-  shutdown(fd_, SHUT_RDWR);
-  close(fd_);
+  //shutdown(fd_, SHUT_RDWR);
+  std::string close_msg("close");
+  write(control_sockets_[1], close_msg.c_str(), close_msg.length());
+  //close(fd_);
 }
 
 // client quicly callbacks -----------------------------------------------------

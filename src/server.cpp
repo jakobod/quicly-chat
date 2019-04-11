@@ -65,6 +65,8 @@ server::server() :
  * init function for server object
  */
 void server::init() {
+  socketpair(PF_LOCAL, SOCK_DGRAM, 0, control_sockets_);
+
   memset(&tlsctx_, 0, sizeof(ptls_context_t));
   tlsctx_.random_bytes = ptls_openssl_random_bytes;
   tlsctx_.get_time = &ptls_get_time;
@@ -81,8 +83,16 @@ void server::init() {
   setup_session_cache(ctx.tls);
   quicly_amend_ptls_context(ctx.tls);
 
-  load_certificate_chain(ctx.tls, "/home/boss/CLionProjects/quicly-chat/quicly/t/assets/server.crt");
-  load_private_key(ctx.tls, "/home/boss/CLionProjects/quicly-chat/quicly/t/assets/server.key");
+  std::string path_to_certs;
+  char* path = getenv("QUICLY_CERTS");
+  if (path) {
+    path_to_certs = path;
+  } else {
+    // try to load defailt certs
+    path_to_certs = "/home/jakob/CLionProjects/quicly-chat/quicly/t/assets/";
+  }
+  load_certificate_chain(ctx.tls, (path_to_certs + "server.crt").c_str());
+  load_private_key(ctx.tls, (path_to_certs + "server.key").c_str());
 
   key_exchanges_[0] = &ptls_openssl_secp256r1;
 
@@ -141,8 +151,9 @@ void server::operator()() {
       }
       FD_ZERO(&readfds);
       FD_SET(fd_, &readfds);
-    } while (select(fd_ + 1, &readfds, NULL, NULL, tv) == -1 && errno == EINTR);
-    if (FD_ISSET(fd_, &readfds)) {
+      FD_SET(control_sockets_[0], &readfds);
+    } while (select(fd_ + 1, &readfds, NULL, NULL, tv) == -1 && errno == EINTR && running_);
+    if (FD_ISSET(fd_, &readfds) && running_) {
       uint8_t buf[4096];
       msghdr mess = {};
       sockaddr sa = {};
@@ -227,6 +238,15 @@ void server::operator()() {
       }
     }
   }
+
+  // close connections.
+  for (auto& conn : conns_) {
+    quicly_close(conn, 0, "");
+    send_pending(fd_, conn);
+    quicly_free(conn);
+  }
+  close(fd_);
+  std::cout << "server quit" << std::endl;
 }
 
 void server::send(const char* buf, size_t amount, quicly_stream_t* from) {
@@ -251,7 +271,8 @@ void server::send(const char* buf, size_t amount, quicly_stream_t* from) {
  */
 void server::stop() {
   running_ = false;
-  shutdown(fd_, SHUT_RDWR);
+  std::string close_msg("close");
+  write(control_sockets_[1], close_msg.c_str(), close_msg.length());
 }
 
 // quicly callbacks ----------------------------------------------------

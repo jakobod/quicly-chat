@@ -11,3 +11,14 @@ cd build
 cmake ..
 make -j$(nproc)
 ```
+
+# how to run
+to run the quicly_server you first need to set an environment-variable to the folder containing `server.crt` and `server.key`.
+```
+export QUICLY_CERTS=/path/to/folder/
+```
+after that you can just run the server or client.
+```
+./quicly_server
+./quicly_client
+```
