@@ -1,5 +1,5 @@
 //
-// Created by boss on 31.03.19.
+// Created by Jakob on 31.03.19.
 //
 
 #ifndef PICOQUIC_TEST_CLIENT_HPP
@@ -42,7 +42,7 @@ private:
   ptls_save_ticket_t save_ticket_;
   ptls_key_exchange_algorithm_t *key_exchanges_[128];
   ptls_context_t tlsctx_;
-  quicly_conn_t* conn_;
+  quicly_conn_t_ptr conn_;
   int fd_;
 };
 

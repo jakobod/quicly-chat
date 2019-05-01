@@ -105,11 +105,12 @@ void client::operator()() {
   if (bind(fd_, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0) {
     throw std::runtime_error("bind(2) failed");
   }
-  // TODO: this throws.. why tho?
-  if (quicly_connect(&conn_, &ctx, host_.c_str(), reinterpret_cast<sockaddr*>(&sa_), salen_, &next_cid_,
+  quicly_conn_t* conn;
+  if (quicly_connect(&conn, &ctx, host_.c_str(), reinterpret_cast<sockaddr*>(&sa_), salen_, &next_cid_,
                        &hs_properties_, &resumed_transport_params_)) {
     throw std::runtime_error("quicly_connect failed");
   }
+  conn_.reset(conn);
 
   ++next_cid_.master_id;
   //send_pending(fd_, conn_);
@@ -118,9 +119,9 @@ void client::operator()() {
     fd_set readfds;
     timeval *tv, tvbuf = {};
     do {
-      int64_t timeout_at = conn_ != nullptr ? quicly_get_first_timeout(conn_) : INT64_MAX;
+      int64_t timeout_at = conn_ != nullptr ? quicly_get_first_timeout(conn_.get()) : INT64_MAX;
       if (timeout_at != INT64_MAX) {
-        quicly_context_t *ctx = quicly_get_context(conn_);
+        quicly_context_t *ctx = quicly_get_context(conn_.get());
         int64_t delta = timeout_at - ctx->now->cb(ctx->now);
         if (delta > 0) {
           tvbuf.tv_sec = delta / 1000;
@@ -157,15 +158,14 @@ void client::operator()() {
         size_t plen = quicly_decode_packet(&ctx, &packet, buf + off, rret - off);
         if (plen == SIZE_MAX)
           break;
-        quicly_receive(conn_, &packet);
+        quicly_receive(conn_.get(), &packet);
         off += plen;
       }
     }
     if (conn_ != nullptr) {
-      ret = send_pending(fd_, conn_);
+      ret = send_pending(fd_, conn_.get());
       if (ret != 0) {
-        quicly_free(conn_);
-        conn_ = nullptr;
+        conn_.reset();
         if (ret == QUICLY_ERROR_FREE_CONNECTION) {
           throw std::runtime_error("QUICLY_ERROR_FREE_CONNECTION");
         } else {
@@ -177,9 +177,8 @@ void client::operator()() {
   }
 
   // close connection.
-  quicly_close(conn_, 0, "");
-  send_pending(fd_, conn_);
-  quicly_free(conn_);
+  quicly_close(conn_.get(), 0, "");
+  send_pending(fd_, conn_.get());
   close(fd_);
   std::cout << "client quit" << std::endl;
 }
@@ -187,14 +186,14 @@ void client::operator()() {
 void client::send(const char* buf, int amount) {
   // open stream for this data
   quicly_stream_t* stream;
-  if (quicly_open_stream(conn_, &stream, 0)) {
+  if (quicly_open_stream(conn_.get(), &stream, 0)) {
     throw std::runtime_error("quicly_open_stream failed");
   }
 
   // send data and close stream afterwards.
   quicly_streambuf_egress_write(stream, buf, amount);
   quicly_streambuf_egress_shutdown(stream);
-  send_pending(fd_, conn_);
+  send_pending(fd_, conn_.get());
 }
 
 void client::stop() {

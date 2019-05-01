@@ -6,6 +6,7 @@
 #define PICOQUIC_TEST_QUICLY_STUFF_HPP
 
 #include <memory>
+#include <iostream>
 extern "C" {
 #include "quicly.h"
 #include "quicly/defaults.h"
