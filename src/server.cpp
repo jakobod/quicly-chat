@@ -75,7 +75,7 @@ void server::init() {
   tlsctx_.require_dhe_on_psk = true;
   tlsctx_.save_ticket = &save_ticket_;
 
-  ctx = quicly_default_context;
+  ctx = quicly_spec_context;
   ctx.tls = &tlsctx_;
   ctx.stream_open = &stream_open_;
   ctx.closed_by_peer = &closed_by_peer_;
